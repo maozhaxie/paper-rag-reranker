@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>论文 RAG 阅读助手</title>
+<style>
+:root{font:16px/1.7 system-ui,sans-serif;color:#263b49;background:#f3f5f5}*{box-sizing:border-box}body{margin:0}main{max-width:1100px;margin:auto;padding:30px 24px 60px}header{border-bottom:2px solid #183e41;padding-bottom:22px}h1{font-size:32px;margin:4px 0 10px}h2{font-size:21px;margin:0 0 12px}h3{font-size:17px}p{margin:10px 0}.muted{color:#596d76}.tag{color:#21665b;font-size:13px;letter-spacing:2px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}section{background:white;border:1px solid #d7e0df;border-radius:12px;padding:24px;margin-top:22px}.full{grid-column:1/-1}button,.link{display:inline-block;background:#1f5a51;color:white;border:0;border-radius:6px;padding:10px 15px;font:inherit;cursor:pointer;margin:6px 5px 6px 0;text-decoration:none}button.secondary,.link{background:#e7efed;color:#1c5048}button:disabled{opacity:.5;cursor:wait}input,select,textarea{font:inherit;border:1px solid #9dacaf;border-radius:5px;padding:7px}input{width:90px}textarea{width:100%;min-height:95px}.status{white-space:pre-wrap;color:#365e60;min-height:26px}pre,#answer{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.scroll{max-height:420px;overflow:auto}details{border-top:1px solid #e0e7e5;padding:12px 0}summary{cursor:pointer;font-weight:600}a{color:#16665b}.warning{background:#fff6df;padding:10px 14px;border-radius:6px;color:#6d501b}.examples button{font-size:14px;padding:5px 10px}#answer{font-size:17px}.small{font-size:14px}@media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:20px 14px}section{padding:18px}h1{font-size:26px}}
+</style></head>
+<body><main>
+<header><div class="tag">PAPER RAG / 学习与复现</div><h1>让答案回到你的论文</h1><p>读取切块 → 向量入库 → 检索原文 → 生成带来源的回答</p><div id="configuration" class="muted" role="status">正在读取本地配置……</div></header>
+<div class="grid">
+<section><h2>01 · 先看文档如何被切分</h2><p class="muted">本步骤在本地运行，不需要数据库或模型密钥。</p>
+<label>每块上限 <input id="size" type="number" min="1" max="1200" value="500"></label>
+<label>重叠 <input id="overlap" type="number" min="0" value="50"></label>
+<p><button id="preview">读取并预览切块</button><a class="link" href="/api/vector/paper" target="_blank" rel="noopener">打开论文 PDF</a></p>
+<div id="previewStatus" class="status" role="status"></div><div id="chunks" class="scroll"></div>
+<p class="small muted">这里的参数仅用于切分实验。正式入库使用 .env 中的 CHUNK_SIZE 和 CHUNK_OVERLAP；预览不会修改它们。页码为 PDF 物理页码，从 1 开始。</p></section>
+<section><h2>02 · 将论文放入向量数据库</h2><p>使用教程的 text-embedding-v1 和 Milvus。首次需在本地配置百炼密钥并启动数据库。</p>
+<button id="check" class="secondary">检查数据库连接</button><button id="index">将论文导入 Milvus</button>
+<div id="indexStatus" class="status" role="status"></div><p class="small muted">导入会调用向量模型 API；再次导入会重新调用 API，但相同配置的文本块不会重复增加。切换论文或切块配置会使用独立集合。</p>
+<p class="warning small">读取与切分成功，只表示文档处理完成。数据库入库和真实模型问答需要分别验证。</p></section>
+<section class="full"><h2>03 · 先检索，再回答</h2><div class="examples" id="examples"></div>
+<textarea id="question" aria-label="论文问题" placeholder="例如：本文样本包含多少个城市，试点组和非试点组分别有多少？"></textarea>
+<label>Top-K <select id="k"><option>1</option><option>3</option><option selected>5</option><option>8</option><option>10</option></select></label>
+<label><input id="rerank" type="checkbox" checked style="width:auto"> 启用相关性重排</label>
+<button id="search" class="secondary">只检索原文</button><button id="ask">检索并回答</button><div id="queryStatus" class="status" role="status"></div>
+<p class="small muted">两种操作都会调用向量模型；勾选重排会增加一次百炼模型调用，从候选片段中重新选取前 K 条。“检索并回答”还会调用对话模型。重排分数越高越相关，L2 越小越接近，两者均不是答案正确率。未设置过滤阈值，末尾仍可能包含无关片段。模型引用仍需核对。</p>
+<div id="answer"></div><div id="sources"></div></section>
+<section class="full"><h2>04 · 用结果检验复现</h2><p>先用可回答的问题检查出处，再用论文没有涉及的问题检查是否乱编。<a href="/questions" target="_blank" rel="noopener">查看带参考页码的测试题</a>。不要只凭“回答很流畅”判断项目成功。</p>
+<p class="muted small">此项目按教程的技术流程补全，未取得作者完整源码。文档解析使用 pypdf + LangChain，存储使用 pymilvus，对话使用百炼 OpenAI 兼容接口；不包含 OCR、图表识别与模型训练。</p></section>
+</div></main>
+<script>
+const el=id=>document.getElementById(id);
+async function api(path,body){const response=await fetch('/api/vector/'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.success)throw Error(data.error||'操作失败');return data;}
+let busy=false,candidateK=20;
+function lock(value){busy=value;for(const id of ['preview','check','index','search','ask','rerank','k'])el(id).disabled=value;}
+async function task(target,fn){if(busy)return;lock(true);try{await fn();}catch(error){el(target).textContent=error.message;}finally{lock(false);}}
+function chunkBox(text,title,page){const box=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent=title;pre.textContent=text;box.append(summary,pre);if(page){const link=document.createElement('a');link.href='/api/vector/paper#page='+Number(page);link.target='_blank';link.rel='noopener';link.textContent='在 PDF 中核对这一页';box.append(link);}return box;}
+api('status').then(d=>{candidateK=d.candidate_k;el('rerank').checked=d.rerank_enabled;el('size').value=d.chunk_size;el('overlap').value=d.overlap;el('configuration').textContent=`当前论文：${d.paper} · ${d.embedding_model} → ${d.llm_model} · 密钥：${d.key_configured?'已填写，尚需验证':'尚未填写，可先预览'} · 入库切块：${d.chunk_size}/${d.overlap}`;}).catch(e=>el('configuration').textContent=e.message);
+fetch('/questions').then(r=>r.json()).then(rows=>{for(const row of rows.slice(0,3)){const button=document.createElement('button');button.className='secondary';button.textContent=row.question;button.onclick=()=>el('question').value=row.question;el('examples').append(button);}}).catch(()=>{});
+el('preview').onclick=()=>task('previewStatus',async()=>{el('previewStatus').textContent='正在提取 PDF 文字并切分……';const d=await api('preview',{chunk_size:Number(el('size').value),overlap:Number(el('overlap').value)});el('previewStatus').textContent=`${d.pages} 页，${d.characters} 字符，${d.chunk_count} 个文本块。空白/无可提取文字页：${d.empty_pages.join('、')||'无'}。完整结果已保存到 outputs/chunks.json。`;el('chunks').replaceChildren();for(const c of d.chunks)el('chunks').append(chunkBox(c.text,`块 ${c.chunk_id} · 第 ${c.page} 页 · ${c.text.length} 字符`,c.page));});
+el('check').onclick=()=>task('indexStatus',async()=>{el('indexStatus').textContent='正在连接 Milvus……';const d=await api('check-db',{});el('indexStatus').textContent=`数据库连接成功，当前有 ${d.collections.length} 个集合。`;});
+el('index').onclick=()=>task('indexStatus',async()=>{el('indexStatus').textContent='正在提取、向量化和入库，可能需要几分钟。保留网页和服务窗口。';const d=await api('upload_document',{});el('indexStatus').textContent=`导入完成：${d.chunks} 个文本块，集合 ${d.collection}。`;});
+async function query(onlySearch){await task('queryStatus',async()=>{el('answer').textContent='';el('sources').replaceChildren();el('queryStatus').textContent=onlySearch?'正在检索原文……':'正在检索并生成回答……';const d=await api(onlySearch?'search':'query',{question:el('question').value,k:Number(el('k').value),rerank:el('rerank').checked});el('answer').textContent=d.answer||'';for(const s of d.sources)el('sources').append(chunkBox(s.text,`[资料${s.id}] 第 ${s.page} 页 · 块 ${s.chunk_id} · L2 ${s.l2_distance.toFixed(4)}${s.rerank_score===undefined?'':` · 重排 ${s.rerank_score.toFixed(4)} · 原向量排名 ${s.vector_rank}`}`,s.page));el('queryStatus').textContent=`${el('rerank').checked?`重排完成（最多 ${candidateK} 条候选）`:'向量检索完成'}，返回 ${d.sources.length} 条依据${d.elapsed_seconds===undefined?'':`，耗时 ${d.elapsed_seconds} 秒`}。请展开来源核对。`;});}
+el('search').onclick=()=>query(true);el('ask').onclick=()=>query(false);
+</script></body></html>

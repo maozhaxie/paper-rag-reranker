@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+.vscode/
+*.pyc
+papers/
+outputs/
+infra/volumes/
+rerank_training/model/
+rerank_training/data/
+rerank_training/artifacts/
+*.part
